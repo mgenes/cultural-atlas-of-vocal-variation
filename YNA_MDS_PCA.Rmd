@@ -1,0 +1,397 @@
+---
+title: "Yellow-naped amazon xcorr analyses and PCA"
+author: "Molly Dupin"
+date: "7/18/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages, read in data}
+setwd("~/Desktop/R/MS_thesis/Files_for_final_analysis/Vocal_data")
+getwd()
+
+X <- c("warbleR", "Rraven", "parallel", "devtools", "dplyr", "ggfortify", "ggplot2", "pbapply", "plyr", "tidyverse", "mclust", "aricode", "ks", "overlap", "data.table", "scales", "viridis", "egg", "ggplotify", "grid", "effsize", "userfriendlyscience", "car", "rosetta")
+invisible(lapply(X, library, character.only = TRUE))
+
+# Read in extended selection table
+sels <- readRDS("Yellow_naped_vocal_data_EST.RDS")
+View(sels)
+
+# Check the available number of cores
+parallel::detectCores()
+
+# set the cores to use less than 2 of the total
+cores <- parallel::detectCores() - 2 
+
+```
+
+We use spectrographic cross-correlation (SPCC) to estimate pairwise dissimilarity across all calls using the cross_correlation function. We created multi-dimensional space plots to visualize the data.
+
+```{r run SPCC for all calls and visualize}
+# Run the spectrographic cross-correlation using optimal parameters
+xc_mat <- xcorr(X = sels, wl = 512, ovlp = 85, bp = c(0.5, 2.5), parallel = cores, pb = TRUE, cor.mat = TRUE, na.rm = TRUE)
+str(xc_mat)
+View(xc_mat)
+
+# Save the generated matrix as RDS file
+saveRDS(xc_mat, "SPCC_YNA_vocal_data.RDS")
+
+# Make the matrix an object to use for plotting
+xc_mat <- readRDS("SPCC_YNA_vocal_data.RDS")
+
+# Look at calls using multidimensional scaling (MDS) to visualize SPCC acoustic space
+?stats::cmdscale
+
+# Create a distance matrix for plotting the points in acoustic space
+xc_dist <- stats::as.dist(1-xc_mat, diag = TRUE, upper = FALSE) 
+class(xc_dist)
+
+# Use k=2 to view in 2 dimensions using the distance matrix points
+mds_res <- stats::cmdscale(d = xc_dist, k = 2, add = TRUE)
+
+# Extract site names from xc_mat dimension names
+nms <- dimnames(xc_mat)[[1]]
+site <- sapply(1:length(nms), function(x){
+  strsplit(nms[x], split = "_")[[1]][5]
+})
+
+# Create a data frame out of the 2 dimensions, first 2 columns, for plotting calls by type
+df <- data.frame(X = mds_res$points[, 1], Y = mds_res$points[, 2], Call_Type = sels$Call_Type)
+str(df)
+
+# Make a color palette object with different colors for each call type Be careful about using predetermined color palettes, as some colors may be repeated (if number of colors in palette are fewer than number of call types) or too similar to visually distinguish once plotted
+cbPalette <- c("red", "blue", "gold", "purple4", "orange", "green4", "lightpink", "deepskyblue", "magenta", "lightgoldenrod", "grey", "brown", "black", "red4", "orchid4", "tan1", "hotpink4", "indianred", "orchid", "lightseagreen", "lightseablue", "darkolivegreen1", "rosybrown4", "darkolivegreen4", "tan4", "honeydew4")
+
+# Set the aesthetics for the graph background/layout
+theme_AcousticSpace <- function(){
+  theme(panel.background = element_rect(fill = "white", color = "white"), 
+        plot.background = element_rect("white", color = "white"),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_line(colour = "white"),
+        axis.line = element_line(size = 0.8, colour = "black"),
+        axis.title = element_text(size = 25),
+        legend.text = element_text(size = 25),
+        axis.text = element_text(size = 15))
+}
+
+# Points plotted using hulls will have polygons around each call type, skip this step to create plots without polygons
+# hulls <- plyr::ddply(df, "Call_Type", function(x){x[chull(x$X, x$Y), ]})
+
+ggplot(data = df, 
+       aes(x = X, y = Y, color = Call_Type, fill = Call_Type)) +
+  geom_point(size = 7, shape = 21) +
+  # geom_polygon(data = hulls, aes(x = X, y = Y, fill = Call_Type, color = Call_Type), alpha = 0.2, size = 0.2) + # Leave this commented out if you are creating plots without polygons
+  scale_color_manual(values = cbPalette) + 
+  scale_fill_manual(values = cbPalette) +
+  xlab("MDS Dimension 1") + 
+  ylab("MDS Dimension 2") +
+  theme_AcousticSpace() +
+  theme(legend.position = "right") +
+
+# Export a .jpg file of the plot
+jpeg("MDS_all_vocal_data.jpeg", units = NULL, width = 10, height = 11, res = 300)
+
+```
+
+In order to better visualize the data we generated MDS plots for each country sampled. This process creates separate cross correlation matrices for each country, they can be saved as individual .RDS files to access in the future for quick country-level plotting without rerunning the xcorr function
+
+
+```{r create MDS plots by countries}
+
+# Note: instead of rewriting the same code for every country, we changed the value within the grep function to whatever country we wanted to plot (Mexico, Guatemala, Honduras, Nicaragua, Costa Rica). We also changed the name of objects created to include a country 'tag' (ie, Mex, Guat, Hond, Nica, Costa) to avoid confusion with the previously made matrix for all calls
+
+# grep out specific group (can be region, country, or any categorical variable)
+xc_mat_Mex <- xcorr(X = sels[grep("Mexico", sels$Country), ], wl = 512, ovlp = 85, bp = c(0.5, 2.5), parallel = cores, pb = TRUE, cor.mat = TRUE, na.rm = TRUE)
+str(xc_mat_Mex)
+View(xc_mat_Mex)
+# saveRDS(xc_mat_Mex, file = "SPCC_Mexico_calls.RDS")
+
+# Create the distance matrix
+xc_dist_Mex <- stats::as.dist(1-xc_mat_Mex, diag = TRUE, upper = FALSE)
+class(xc_dist_Mex)
+
+# Use only 2 dimensions b/c just visualizing
+mds_res_Mex <- stats::cmdscale(d = xc_dist_Mex, k = 2, add = TRUE)
+
+# Create a data frame to use for plotting
+# first extract site names from xc_mat dimension names
+nms_Mex <- dimnames(xc_mat_Mex)[[1]]
+site <- sapply(1:length(nms), function(x){
+  strsplit(nms[x], split = "_")[[1]][5]
+})
+
+temp_Mex <- filter(sels, grepl("Mexico", sels$Country))
+View(temp_Mex)
+temp_Call_Type <- temp_Mex$Call_Type
+View(temp_Call_Type)
+
+df_Mex <- data.frame(X = mds_res_Mex$points[, 1], Y = mds_res_Mex$points[, 2], Call_Type = temp_Mex$Call_Type)
+str(df)
+
+hulls <- plyr::ddply(df_Mex, "Call_Type", function(x){x[chull(x$X, x$Y), ]})
+
+theme_AcousticSpace <- function(){
+  theme(panel.background = element_rect(fill = "white"), plot.background = element_rect(fill = "white"),
+        panel.grid.major = element_line(size = 3, colour = "white"),
+        panel.grid.minor = element_line(size = 0.75, colour = "white"),
+        axis.line = element_line(size = 0.45, colour = "black"),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12))
+}
+
+# make a color palette object with number of different colors equivalent to number of call types
+# Note: you may get an error code if number of colors listed does not match number of call types. Instead of deleting them and readding them constantly, just comment out what is not needed
+
+cbPalette <- c("cornflowerblue", "coral4", "chartreuse1", "darkorchid4") # "coral", "green4", "cadetblue1", "darkslateblue", "black", "darkolivegreen", "darkmagenta", "azure4", "firebrick2", "blue", "deeppink", "grey50", "hotpink4", "khaki1", "springgreen1", "cyan", "plum1", "steelblue", "wheat4"
+
+# Note: shape can be another useful way to distinguish call types if necessary
+jpeg("Mexico_SPCC_MDS_Jul19.jpeg", units = NULL, width = 10, height = 10, res = 300)
+ggplot(data = df_Mex, 
+       aes(x = X, y = Y, color = temp_Call_Type, fill = temp_Call_Type)) +
+  geom_point(size = 3) + # shape = temp_Call_Type
+  # geom_polygon(data = hulls, aes(x = X, y = Y, fill = temp_Call_Type, color = temp_Call_Type), alpha = 0.2, size = 0.2) +
+  ggtitle("YNA vocal data clustered by visually classified call types from Mexico") +
+  scale_color_manual(values = cbPalette) + 
+  scale_fill_manual(values = cbPalette) +
+  xlab("MDS Dimension 1") + 
+  ylab("MDS Dimension 2") +
+  theme_AcousticSpace() +
+  theme(legend.position = "top") 
+dev.off()
+```
+
+Kernel plots were then produced to show the distribution of each call using contour lines, with closer lines representing a higher density of calls. The smallest circles indicate high concentrations of calls in one area of acoustic space.
+
+```{r kernel plots for each country}
+
+# create path object
+path <- "~/Desktop/R/MS_thesis/Files_for_final_analysis/Vocal_data"
+
+# Read in extended selection table 
+ccs_est <- readRDS("Yellow_naped_vocal_data_EST.RDS")
+glimpse(ccs_est)
+
+# Check available cores
+parallel::detectCores()
+
+# Set to use 2 less cores than available
+cores <- parallel::detectCores() - 2
+
+# Read in the cross correlation matrix
+xc_mat <- readRDS(file.path(path, "SPCC_YNA_vocal_data.RDS"))
+str(xc_mat)
+
+# Create distance matrix
+xc_mat_dist <- stats::as.dist(1 - xc_mat, diag = TRUE, upper = TRUE)
+str(xc_mat_dist)
+
+# Perform MDS to get 2 dimensions; k may need to be changed depending on visible patterns in low dimensional acoustic space
+
+# Note: The higher k is set, the lower maxit should be set
+iso <- invisible(MASS::isoMDS(xc_mat_dist, k = 4, maxit = 1000, trace = FALSE))
+str(iso)
+saveRDS(iso, "YNA_kernel_isoMDS.RDS")
+
+# Read in iso matrices here if you've already made it
+iso <- readRDS("YNA_kernel_isoMDS.RDS") 
+
+# Combine the call matrix with information from metadata sheet for the acoustic space plot
+meta <- readRDS("Yellow_naped_amazon_vocal_metadata.RDS")
+kern_df <- meta %>%
+  dplyr::select(sound.files, Year, Country, Region, site, Call_Type, site_year) %>% 
+dplyr::mutate(
+  X = iso$points[,1], Y = iso$points[,2])
+glimpse(kern_df)
+
+# This can be saved as an RDS or csv when finished
+saveRDS(kern_df, file.path(path, "kernel_iso_with_metadata.RDS"))
+
+# Read in the RDS file for the isoMDS if its already been generated
+kern_df <- readRDS("kernel_iso_with_metadata.RDS")
+
+regions <- kern_df %>%
+  pull(Region) %>%
+  unique()
+
+Country <- kern_df %>%
+  pull(Country) %>%
+  unique()
+
+View(kern_df)
+
+# Make a color palette
+cols <- c("red", "blue", "gold", "purple4", "orange", "green4", "lightpink", "deepskyblue", "magenta", "lightgoldenrod", "grey", "brown", "black", "red4", "orchid4", "tan1", "hotpink4", "indianred", "orchid", "lightseagreen", "lightseablue", "darkolivegreen1", "rosybrown4", "darkolivegreen4", "tan4", "honeydew4")
+
+x <- c(4) # change number based on the country you want to plot: 1 (Costa Rica), 2 (Nicaragua), 3 (Mexico), 4 (Honduras), 5 (Guatemala)
+y <- 1
+kern_df_tmp <- kern_df %>%
+  filter(Country == country[x]) %>%
+  droplevels() 
+
+# Note: change .jpeg title to reflect country being plotted
+ggplot(kern_df_tmp, aes(x = X, y = Y, color = Call_Type)) +
+  geom_density2d() +
+  scale_color_manual(values = cols) +
+  xlab("MDS Dim 1") +
+  ylab("MDS Dim 2") +
+  theme(panel.background = element_rect(fill = "white", color = "white"), 
+        plot.background = element_rect("white", color = "white"),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_line(colour = "white"),
+        axis.line = element_line(size = 0.8, colour = "black"),
+        axis.title = element_text(size = 25),
+        legend.text = element_text(size = 25),
+        axis.text = element_text(size = 15),
+        legend.position = "right") +
+jpeg("Kernel_plot_YNA.jpeg", units = NULL, width = 10, height = 11, res = 300)
+
+```
+
+We used principal component analysis on spectrographic features as an alternative approach to measure similarity between call types across the range. We plotted the first 2 PC's for each country to visualize results. We then performed a one-way ANOVA to test the means, and conduct a post-hoc test using posthocTGH().
+
+```{r perform PCA, conduct ANOVA and post-hoc testing}
+
+# Read in extended selection table 
+sels <- readRDS("Yellow_naped_vocal_data_EST.RDS")
+variant <- sels$Call_Type
+
+# To conduct PCA on calls by country, use the filter function to pull out calls from desired country
+# temp <- filter(sels, grepl("Mexico", sels$Country))
+# variant <- temp$Call_Type
+# str(temp)
+
+# Measure acoustic parameters of all calls
+param <- specan(sels, bp = c(0.5, 2.5), ovlp = 85, ff.method = "tuneR", wn = "hanning") # [grep("Mexico", sels$Country),]
+str(param)
+View(param)
+
+# Remove columns that would confuse R
+param$selec <- NULL
+# temp$selec <- NULL
+str(param)
+
+# Conduct PCA
+pca <- prcomp(x = param[, sapply(param, is.numeric)], scale. = TRUE)
+summary(pca)
+
+# Extract the 5th column of the list (which accounts for the first 5 PCs) and make it a dataframe
+
+# The 1st-5th columns are the only PC's we really consider for this analysis, so no point looking beyond that because the influence of other PC values is going to be much less. We only use the first 2 PC's for plotting because it would be hard to visualize anything more than 2 dimensions 
+pcascor <- as.data.frame(pca[[5]])
+glimpse(pcascor)
+pcaload <- as.data.frame(pca[[2]])
+glimpse(pcaload)
+
+# The pca loadings can be saved as a .csv file to review manually 
+write.csv(pcaload, file = "RangewidePCAloadings_by_variable.csv")
+
+# Add a column for call type (variant)
+pcascor$variant <- sapply(1:nrow(param), function(x){
+  strsplit(as.character(param$sound.files[x]), split = "_")[[1]][1]
+})
+View(pcascor)
+
+# Create a data frame with the first 2 PC scores and the variants for plotting
+pcascor_df <- data.frame(X = pcascor[, 1], Y = pcascor[, 2], variant = pcascor$variant)
+hulls <- pcascor_df %>%
+  group_by(variant) %>%
+  slice(chull(X, Y))
+
+# Create color palette
+cols <- c("navajowhite4", "yellow", "darkorange", "tomato4") # "navyblue", "maroon2"
+
+theme_AcousticSpace <- function(){
+  theme(panel.background = element_rect(fill = "white"), plot.background = element_rect(fill = "white"),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_line(colour = "white"),
+        axis.line = element_line(size = 0.8, colour = "black"),
+        axis.title = element_text(size = 25),
+        legend.text = element_text(size = 25),
+        axis.text = element_text(size = 15))
+}
+
+# Generate plot
+ggplot(pcascor_df, aes(x = X, y = Y)) +
+    geom_point(aes(color = variant, fill = variant), shape = 21, size = 3) +
+    geom_polygon(data = hulls, aes(x = X, y = Y, fill = variant, color = variant), alpha = 0.2, size = 0.2) +
+    scale_colour_manual(values = cols) + scale_fill_manual(values = cols) +
+    labs(x = "PC1", y = "PC2") +
+    theme_AcousticSpace() +
+    theme(legend.position = "right")
+jpeg("PCA_plot.jpeg", units = NULL, width = 10, height = 11, res = 300)
+  dev.off()
+
+# Create data frame for ANOVA
+adf <- data.frame(sels$Call_Type, pcascor$PC1, pcascor$PC2, pcascor$PC3, pcascor$PC3, pcascor$PC3)
+names(adf) <- c("variant", "PC1", "PC2", "PC3", "PC4", "PC5")
+View(adf)
+
+# plot the mean PC1 by variant
+a1plot <- boxplot(PC1 ~ variant, data = adf, xlab = "Variant", ylab = "PC1", main = "Mean PC1 Values by Variant")
+
+a2plot <- boxplot(PC2 ~ variant, data = adf, xlab = "Variant", ylab = "PC2", main = "Mean PC1 Values by Variant")
+
+# There are outliers in the residual plot that may imply the variances across groups are not homogeneous; we can use Levene's test to determine if they are significantly different
+leveneTest(PC1 ~ variant, data = adf)
+# Result: p-value is significant so variance between groups is significantly different
+
+# Test data normality
+shapiro.test(x = adf$PC1)
+# result shows data is normal
+
+# Need to use Welchs ANOVA since the data is normal but the variances are unequal
+a1 <- oneway.test(PC1 ~ variant, adf)
+a1
+# data:  PC1 and variant
+# F = 294.3, num df = 13.00, denom df = 299.41,
+# p-value < 2.2e-16
+
+a2 <- oneway.test(PC2 ~ variant, adf)
+a2
+# data:  PC2 and variant
+# F = 53.292, num df = 13.00, denom df = 300.36,
+# p-value < 2.2e-16
+
+a3 <- oneway.test(PC3 ~ variant, adf)
+a3
+# data:  PC3 and variant
+# F = 41.233, num df = 13.00, denom df = 302.52, p-value
+# < 2.2e-16
+
+a4 <- oneway.test(PC4 ~ variant, adf)
+a4
+# data:  PC4 and variant
+# F = 41.233, num df = 13.00, denom df = 302.52, p-value
+# < 2.2e-16
+
+a5 <- oneway.test(PC5 ~ variant, adf)
+a5
+# data:  PC5 and variant
+# F = 41.233, num df = 13.00, denom df = 302.52, p-value
+# < 2.2e-16
+
+TGH1 <- posthocTGH(adf$PC1, adf$variant, method = c("games-howell"), conf.level = 0.95, digits = 2, p.adjust = "none", formatPvalue = TRUE)
+res1 <- print(TGH1)
+View(res1)
+
+TGH2 <- posthocTGH(adf$PC2, adf$variant, method = c("games-howell"), conf.level = 0.95, digits = 2, p.adjust = "none", formatPvalue = TRUE)
+res2 <- print(TGH2)
+View(res2)
+
+TGH3 <- posthocTGH(adf$PC3, adf$variant, method = c("games-howell"), conf.level = 0.95, digits = 2, p.adjust = "none", formatPvalue = TRUE)
+res3 <- print(TGH3)
+View(res3)
+
+TGH4 <- posthocTGH(adf$PC4, adf$variant, method = c("games-howell"), conf.level = 0.95, digits = 2, p.adjust = "none", formatPvalue = TRUE)
+res4 <- print(a4)
+write.csv(res4, file = "YNA_PCAposthoc_PC4.csv")
+
+TGH5 <- posthocTGH(adf$PC5, adf$variant, method = c("games-howell"), conf.level = 0.95, digits = 2, p.adjust = "none", formatPvalue = TRUE)
+res5 <- print(a5)
+write.csv(res5, file = "YNA_PCAposthoc_PC5.csv")
+
+```
+

@@ -1,0 +1,137 @@
+---
+title: "Call tailoring and catalog creation"
+author: "Molly Genes"
+date: "July 2023"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages and read in data}
+setwd("~/Desktop/R/MS_thesis/Files_for_final_analysis/Vocal_data")
+getwd()
+
+# Load appropriate packages into library
+X <- c("warbleR", "Rraven", "parallel", "devtools", "dplyr", "ggfortify", "ggplot2", "pbapply", "data.table")
+invisible(lapply(X, library, character.only = TRUE))
+
+# Use imp_raven to import selection tables generated in Raven
+
+# Note: for the Genes_Araya-Salas_Dahlin_Wright dataset, selection tables were only generated for 2018 and 2019 contact calls. Selections from 2016 were made using “cuts” from raw sound files, creating independent .wav files for each contact call per bird.   
+sels <- imp_raven(path = "~/Desktop/R/MS_thesis/Files_for_final_analysis/Vocal_data", name.from.file = TRUE, ext.case = "lower", rm.dup = TRUE, freq.cols = FALSE) 
+str(sels)
+class(sels)
+View(sels)
+
+# Create .csv file; although not a crucial step, its a good opportunity to manually check that all relevant information is correct and looks okay
+write.csv(sels, file = "2018_2019_selections.csv", row.names = FALSE)
+
+# Selection data (start, end times and total time) for 2016 calls were recorded in a spreadsheet.
+
+# All columns in 2018_2019_selections.csv were copied and combined with the 2016 data sheet. The combined file is saved under a new name.
+
+# The following columns were manually added to create a metadata sheet which was used from this point on: year, country, region, site name, latitude, longitude, individual (calling bird identity), year/site name combination
+
+# Read in metadata sheet
+metadata <- read.csv("Yellow_naped_amazon_vocal_metadata.csv", header = TRUE)
+View(metadata)
+
+# At this point, there is no need to repeat the previous steps when returning to the code; just read in data as in previous step and go from there
+
+```
+
+The next step is to visually assess calls, determine their quality, and categorize them. Make a catalog of all calls, grouped by site.
+
+```{r create a lexicon}
+# Play around with the different parameters to find optimal output for visualization
+
+# Note: here is no flim function so spectrograms will appear squished but that's okay for right now; .jpeg generated via spec_param will be in working directory
+spec_param(X = metadata[sample(x = 1:nrow(metadata), size = 1), ], length.out = 5, ovlp = c(70), wl = c(225), collev.min = c(-90))
+
+# Use optimal parameters to create spectrograms for every call; the jpegs generated will end up in working directory. 
+
+# Number of generated jpegs should match number of calls in metadata
+spectrograms(X = metadata, wl = 700, flim = c(0.5, 2.5), wn = "hanning", ovlp = 70, res = 300, osci = FALSE, propwidth = FALSE, line = FALSE, mar = 0.1)
+
+## Extract the site names to use as labels in the catalog
+x <- 1 # test
+site <- sapply(1:nrow(metadata), function(x){
+  strsplit(as.character(metadata$sound.files[x]), split = "_")[[1]][5]
+})
+site
+
+# Extract unique recording IDs to also include in catalog labels
+x <- 1 
+rec_ID <- sapply(1:nrow(metadata), function(x){
+  tmp <- strsplit(as.character(metadata$sound.files[x]), split = "_")[[1]][7]
+  strsplit(tmp, split = ".w")[[1]][1] # remove .wav extension
+})
+rec_ID
+
+# This will be used as a catalog label over each spectrogram
+metadata$unique_rec_ID <- paste(rec_ID, metadata$selec, sep = "-")
+
+# Site will be used as a tag
+metadata$site <- site
+str(metadata)
+View(metadata)
+
+# Create catalog of all spectrograms
+catalog(X = metadata, flim = c(0.5, 2.5), nrow = 3, ncol = 4, ovlp = 85, wl = 512, res = 300, mar = 0.1, same.time.scale = FALSE, collev = seq(-28, 0, 1), orientation = "h", labels = c("unique_rec_ID"), tags = c("site"), tag.pal = list(topo.colors), hatching = 1)
+
+catalog2pdf()
+
+# Calls were visually sorted into types. A column titled "Call_type" was manually added to the metadata sheet, and each call's type was recorded.
+
+# Columns labeled "Visual_Quality_Score", "Cable_Overlaps", and "Overlapping_Signal" were manually added to the metadata sheet and each spectrogram was visually categorized as being visually high (H), medium (M), or low (L) quality. Presence of of overlapping signal or cable overlap is indicated in the metadata by Y for yes, and N for no. This information was manually recorded in the metadata sheet.
+
+# Low quality calls and calls with signal overlap were removed from the metadata sheet
+
+# read in udpated metadata sheet
+metadata <- read.csv("Yellow_naped_amazon_vocal_metadata.csv", header = TRUE)
+
+# After quality control, any sites with less than 3 birds need to be removed. Then check whether there are any birds with less than 3 calls.
+table(metadata$Individual)
+table(metadata$Individual)[table(metadata$Individual) < 3]
+
+# Any individuals with less than 3 calls are manually removed from the metadata sheet.
+
+```
+
+Prior to analysis, calls should be as isolated as possible, with no noise interference or empty space before and after the call. This can be accomplished using the seltailor function, where call start and end times can be precisely adjusted. 
+
+```{r call tailoring}
+# Remove empty space before and after each call by precisely adjusting start and end times 
+
+# Make sure parameters are equivalent to what they will be for analysis; add a bandpass filter to remove low and high frequency noise interference (0.5 kHz and 2.5 kHz) by adjusting flim
+seltailor(metadata, flim = c(0.5, 2.5), mar = 0.1, osci = TRUE, auto.next = FALSE, ext.window = TRUE, width = 8, height = 5, wl = 700)
+dev.off()
+
+# The seltailor function will create a file output to your working directory where you can find the new, precise start and end times for the calls
+
+# Tailored start and end times were copied manually to metadata sheet  
+metadata <- read.csv("Yellow_naped_amazon_vocal_metadata.csv", header = TRUE)
+glimpse(metadata)
+saveRDS(metadata, file = "Yellow_naped_amazon_vocal_metadata.RDS")
+
+# Note that the grep() function can be used within the catalog code if you wish to create lexicons by region, year, or some other categorical variable
+
+```
+
+Make an extended selection table (EST) from metadata to be used for analyses
+
+```{r make an extended selection table}
+
+path <- "~/Desktop/R/MS_thesis/Files_for_final_analysis/Vocal_data"
+
+metadata_est <- selection_table(metadata, path = path, extended = TRUE,  confirm.extended = FALSE, parallel = 2)
+glimpse(metadata_est)
+View(metadata_est)
+saveRDS(metadata_est, "Yellow_naped_vocal_data_EST.RDS")
+extensel <- readRDS("Yellow_naped_vocal_data_EST.RDS")
+
+```
